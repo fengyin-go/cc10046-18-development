@@ -74,18 +74,56 @@ def run_crawl_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/data-process")
 def run_data_process(payload: dict[str, Any]) -> dict[str, Any]:
-    """数据处理：HTML解析 → 字段映射 → HTML清洗 → 去重。"""
+    """数据处理：HTML解析 → 字段映射 → HTML清洗 → 去重。
+
+    传入 dict_csv + samples 时走「来源字段字典」链路：先解析试跑核对实际读到的
+    字典版本，再按来源映射得到目标字段；否则沿用原有显式 mapping_rules 方式。
+    """
     html = payload.get("html", "<html><body><p>测试内容</p></body></html>")
+    key_fields = payload.get("key_fields", ["title"])
+
+    parse_result = _parse.domain_parse_html(html)
+    clean_result = _cleaner.domain_clean_html(html)
+
+    dict_csv = payload.get("dict_csv")
+    dict_samples = payload.get("samples")
+    if dict_csv and dict_samples:
+        import_result = _mapper.domain_import_dict_csv(dict_csv, dict_samples)
+        trial_result = _mapper.domain_trial_parse(dict_samples)
+        source_maps: dict[str, Any] = {}
+        map_items: list[dict[str, Any]] = []
+        for source, rows in dict_samples.items():
+            map_result = _mapper.domain_map_by_source(source, rows[0] if rows else {})
+            source_maps[source] = map_result
+            if map_result.get("ok"):
+                map_items.append(map_result["target"])
+        map_result = {"sources": source_maps}
+        if map_items:
+            items = [*map_items, {"title": "extra", "other": "value"}]
+        else:
+            items = [{"title": "extra", "other": "value"}]
+        dedup_result = _dedup.domain_dedup(items, key_fields)
+        return {
+            "chain": "data-process",
+            "steps": {
+                "parse_html": parse_result,
+                "import_dict": import_result,
+                "trial_parse": trial_result,
+                "map_fields": map_result,
+                "clean_html": {"original_length": clean_result["original_length"],
+                               "cleaned_length": clean_result["cleaned_length"]},
+                "dedup": {"original_count": dedup_result["original_count"],
+                          "deduped_count": dedup_result["deduped_count"],
+                          "removed_count": dedup_result["removed_count"]},
+            },
+        }
+
     source_data = payload.get("source_data", {"name": "test", "count": "42"})
     mapping_rules = payload.get("mapping_rules", [
         {"source": "name", "target": "title", "default": "", "transform": ""},
         {"source": "count", "target": "total", "default": "0", "transform": "int"},
     ])
-    key_fields = payload.get("key_fields", ["title"])
-
-    parse_result = _parse.domain_parse_html(html)
     map_result = _mapper.domain_map_fields(source_data, mapping_rules)
-    clean_result = _cleaner.domain_clean_html(html)
     items = [map_result, {"title": "extra", "other": "value"}]
     dedup_result = _dedup.domain_dedup(items, key_fields)
 

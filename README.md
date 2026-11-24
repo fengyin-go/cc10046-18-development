@@ -77,5 +77,23 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 字段映射：来源字段字典
+
+字段映射模块（前端路由 `/field_mapper`，页面 `FieldMappingView.vue`）在通用映射方案之外，
+提供按来源（站点）建立的**来源字段字典**，后端入口为 `app/routers/field_mapping.py`：
+
+| 接口 | 能力 |
+| --- | --- |
+| `POST /api/field-mapping/dictionaries/import` | 导入映射字典 CSV（必含列：来源、来源字段、目标字段、转换类型），按来源建字典；用已采集样本校验列名与转换类型，错误带原文件行号；同次导入中一个来源出错不牵连其他来源 |
+| `GET /api/field-mapping/dictionaries` / `GET .../dictionaries/{source}` | 查询字典版本、列名与规则（含原文件行号、确认状态） |
+| `POST /api/field-mapping/trial` | 解析试跑：消费来源字段字典，核对实际读到的字典版本，标出 `latest`（已用新版）/ `stale`（版本过期）/ `missing`（仍等待导入）的来源 |
+| `POST /api/field-mapping/map` | 按来源映射，交给后续映射得到该来源的目标字段，返回所用字典版本 |
+| `POST /api/field-mapping/rules/confirm` | 确认来源规则；重导修正按 `(来源, 来源字段)` 幂等更新，已确认规则不会写两份 |
+
+约束：转换类型仅支持 `string / int / decimal / upper / lower / trim`（留空按 string）；
+依赖字段必须引用同一来源内存在的来源字段，循环引用会被拦截，相互引用的规则按依赖顺序一起校验与映射。
+领域逻辑集中在 `app/services/field_mapper.py`，对应测试见
+`backend/tests/test_field_dictionary.py`。
+
 领域：数据工程
 子方向：数据采集、爬虫与RPA

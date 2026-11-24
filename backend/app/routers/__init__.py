@@ -3,5 +3,6 @@ from __future__ import annotations
 
 from app.routers import resource
 from app.routers import chains
+from app.routers import field_mapping
 
-ROUTERS = [resource, chains]
+ROUTERS = [field_mapping, resource, chains]
